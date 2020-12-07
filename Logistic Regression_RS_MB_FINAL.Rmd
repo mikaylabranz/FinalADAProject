@@ -1,0 +1,715 @@
+---
+title: "ADA Final Project Data Cleaning"
+author: "Mikayla Branz and Romario Smith"
+date: "10/29/2020"
+output: 
+  html_notebook:
+    toc: yes
+    toc_float: yes
+    code_folding: "hide"
+---
+
+```{r setup, include=FALSE, echo = FALSE}
+knitr::opts_chunk$set(echo = TRUE, include = TRUE, message =FALSE, warning = FALSE)
+```
+# Bring in Data
+Set up data frame:
+
+- Import data from multiple CSV files
+- Combine into one data frame
+- Trim to remove extraneous variables
+- Select only children 72 months and younger
+```{r, import data, eval = FALSE}
+#Install necessary packages 
+pacman::p_load(readr,tidyverse, foreign, ggplot2, poliscidata, survey, MASS, funModeling, brant, dplyr, table1, car, DiagrammeR) 
+
+#Set Working Directory
+#setwd("C:/Users/Mikayla Branz/Documents/Grad School Work/Semester 5 Coursework/Advanced Data Analysis/Final Project")
+
+#Use foreign to import .sav files. 
+DHSload <- read.spss("ZAIR71FL.sav", use.value.label=TRUE, to.data.frame=TRUE)
+
+#Select relevant variables:
+DHS <- DHSload %>% 
+dplyr::select(V781, V826A, V025, V012, V106, V190, V501, V208, V836, V525, V763A, V312, V394, V120, V121, V169A, V171A, V021, V022, V005)
+
+#Verify
+names(DHS)
+
+#Rename variables
+DHS <- DHS %>% 
+  rename("HIVTest_Ever" = "V781", 
+         "HIVTest_MonthsAgo" = "V826A", 
+         "ResidenceType" = "V025", 
+         "Age" = "V012", 
+         "Education" = "V106", 
+         "WealthIndex" = "V190",  
+         "MaritalStatus" = "V501", 
+         "Births_Last5Years" = "V208",  
+         "SexPartners_Lifetime" ="V836",
+         "FirstSex_Age" = "V525", 
+         "STI_12Months" = "V763A", 
+         "ContraceptiveMethod_Current" = "V312", 
+         "HealthFacility_12Months" = "V394", 
+         "Radio" = "V120", 
+         "TV" = "V121", 
+         "MobilePhone" = "V169A", 
+         "InternetUse" = "V171A", 
+         "Cluster" = "V021", 
+         "Stratum" = "V022", 
+         "Individual_Weight" = "V005")
+
+#Select only women ages 15-24
+DHS<-DHS %>%
+  filter(Age >= 15 & Age<=24)
+```
+
+# Recode Exposure Variable: Residence Type
+```{r}
+#Check variable type
+class(DHS$ResidenceType)
+
+#Check distribution
+summary(DHS$ResidenceType)
+
+#Check for missing data
+sum(is.na(DHS$ResidenceType))
+#No missing values
+
+#Reorder
+DHS$ResidenceType<- factor(DHS$ResidenceType, levels = c("Rural", "Urban"))
+```
+# Recode Outcome Variable: HIV Testing Uptake
+```{r}
+#Check to ensure that people who never got an HIV test (HIVTest_Ever=0) did not report a number of Months on HIVTest_MonthsAgo. 
+table(DHS$HIVTest_Ever, DHS$HIVTest_MonthsAgo)
+#It looks consistent. No one in the "Don't know" category. 
+
+#Recode HIV Testing uptake as Yes/No for within the last year. 
+
+#Recode "2 or more years" as 25 so it will be easier to make into categories
+DHS$HIVTest_MonthsAgo<-recode_factor(DHS$HIVTest_MonthsAgo,
+                                     "Two or more years" = "25")
+
+#Make HIV_MonthsAgo numeric so case_when can handle it
+DHS$HIVTest_MonthsAgo<- as.numeric(DHS$HIVTest_MonthsAgo)
+  
+#Make categorical HIV test variable
+DHS <- DHS %>% 
+   mutate(HIVTest_LastYear = ifelse(HIVTest_Ever == "Yes" & HIVTest_MonthsAgo <12, "Yes", "No")) 
+
+sum(is.na(DHS$HIVTest_LastYear))                                
+
+#Make factor variable and check that it categorized variables correctly
+DHS$HIVTest_LastYear<-as.factor(DHS$HIVTest_LastYear)
+levels(DHS$HIVTest_LastYear)
+DHS$HIVTest_MonthsAgo<- as.factor(DHS$HIVTest_MonthsAgo)
+table(DHS$HIVTest_LastYear, DHS$HIVTest_MonthsAgo)
+table(DHS$HIVTest_LastYear, DHS$HIVTest_Ever)
+#Looks good!
+
+```
+# Fix other variables
+## Age
+```{r}
+#Check missing values for Age variable
+sum(is.na(DHS$Age))
+#no missing values
+
+#Check class for Age variable
+class(DHS$Age)
+#Numeric- Looks good!
+
+DHS <- DHS %>% 
+   mutate(Age_Cat = case_when(Age < 18 ~ "15-17", 
+                              Age <21 & Age >=18 ~ "18-21", 
+                              Age <=24 & Age >=21 ~ "21-24"))
+
+class(DHS$Age_Cat)
+#make factor variable
+DHS$Age_Cat<-as.factor(DHS$Age_Cat)
+#Summarize age variable
+summary(DHS$Age_Cat)
+```
+## Education
+```{r}
+#Check missing values for education variable
+sum(is.na(DHS$Education))
+#no missing values
+
+#Check class and levels for education variable
+class(DHS$Education)
+levels(DHS$Education)
+summary(DHS$Education)
+
+#Re-arrange into fewer categories
+DHS <- DHS %>% 
+   mutate(Education_Cat = case_when
+                               (Education == "No education"
+                                 | Education == "Primary" ~ "None or Primary",
+                                Education == "Secondary" ~ "Secondary",
+                               Education == "Higher" ~ "Higher"))
+
+table(DHS$Education,DHS$Education_Cat)
+#Looks good!
+
+#Re-order levels
+levels(DHS$Education_Cat)
+ DHS$Education_Cat <- factor(DHS$Education_Cat, levels = c("None or Primary", "Secondary", "Higher"))
+```
+## Wealth Index
+```{r}
+#Check missing values for wealth variable
+sum(is.na(DHS$WealthIndex))
+#no missing values
+
+#Check class and levels for wealth variable
+class(DHS$WealthIndex)
+levels(DHS$WealthIndex)
+summary(DHS$WealthIndex)
+
+#Re-arrange into fewer categories
+ DHS <- DHS %>% 
+   mutate(WealthIndex_Cat = case_when
+                               (WealthIndex == "Poorest"
+                                 | WealthIndex == "Poorer" ~ "Poor",
+                              WealthIndex == "Middle" ~ "Middle",
+                              WealthIndex == "Richer" |  
+                              WealthIndex == "Richest" ~ "Rich"))
+
+table(DHS$WealthIndex,DHS$WealthIndex_Cat)
+#Looks good!
+
+#Re-order levels
+levels(DHS$WealthIndex_Cat)
+ DHS$WealthIndex_Cat <- factor(DHS$WealthIndex_Cat, levels = c("Poor", "Middle", "Rich"))
+```
+## Marital Status
+```{r}
+#Check missing values for marital status variable
+sum(is.na(DHS$MaritalStatus))
+#no missing values
+
+#Check class and levels for marital status variable
+class(DHS$MaritalStatus)
+levels(DHS$MaritalStatus)
+summary(DHS$MaritalStatus)
+#Looks good!
+
+#Recategorize into fewer categories
+DHS <- DHS %>% 
+   mutate(MaritalStatus_Cat = case_when
+                               (MaritalStatus == "Never in union" ~ "Never in union",
+                                MaritalStatus == "Married" 
+                                 | MaritalStatus == "Living with partner" ~ "Partnered",
+                               MaritalStatus == "Widowed"
+                                 | MaritalStatus == "Divorced"
+                                 | MaritalStatus == "No longer living together/separated" ~ "Not partnered"))
+                             
+DHS$MaritalStatus_Cat<-as.factor(DHS$MaritalStatus_Cat)
+table(DHS$MaritalStatus_Cat,DHS$MaritalStatus)
+```
+## Births in the last 5 years
+```{r}
+#Check missing values for births in the last 5 years variable
+sum(is.na(DHS$Births_Last5Years))
+#no missing values
+
+#Check class and levels for births in the last 5 years variable
+
+class(DHS$Births_Last5Years)
+levels(DHS$Births_Last5Years)
+summary(DHS$Births_Last5Years)
+
+
+#Recategorize Births Variable
+
+DHS <- DHS %>% 
+   mutate(Births_Last5Years_Cat = case_when
+                               (Births_Last5Years == "No births" ~ "No Births", 
+                                 Births_Last5Years == "1" ~ "1 Birth",
+                                 Births_Last5Years == "2"| Births_Last5Years == "3" ~ "2+ Births"))
+
+DHS$Births_Last5Years_Cat<-as.factor(DHS$Births_Last5Years_Cat)
+table(DHS$Births_Last5Years_Cat)
+
+#Looks good!
+
+#Re-level
+DHS$Births_Last5Years_Cat<- factor(DHS$Births_Last5Years_Cat, levels = c("No Births", "1 Birth", "2+ Births"))
+levels(DHS$Births_Last5Years_Cat)
+```
+## Lifetime sex partners
+```{r}
+#Check missing values for lifetime sex partners variable
+sum(is.na(DHS$SexPartners_Lifetime))
+class(DHS$SexPartners_Lifetime)
+summary(DHS$SexPartners_Lifetime)
+#978 missing values (match with "not had sex" from "FirstSex_Age)
+
+#Check class and levels for lifetime sex partners variable
+class(DHS$SexPartners_Lifetime)
+levels(DHS$SexPartners_Lifetime)
+#Change "NA" values to 0 since these cases did not have sex
+DHS$SexPartners_Lifetime<-as.character(DHS$SexPartners_Lifetime)
+DHS$SexPartners_Lifetime[is.na(DHS$SexPartners_Lifetime)]= 0
+DHS$SexPartners_Lifetime<-as.factor(DHS$SexPartners_Lifetime)
+levels(DHS$SexPartners_Lifetime)
+summary(DHS$SexPartners_Lifetime)
+
+DHS <- DHS %>% 
+   mutate(SexPartnersLifetime_Cat = case_when
+                               (SexPartners_Lifetime == "0" ~ "0",
+                                SexPartners_Lifetime == "1" 
+                                |SexPartners_Lifetime == "2" ~ "1-2",
+                                SexPartners_Lifetime == "3" 
+                                  |SexPartners_Lifetime == "4" 
+                                  | SexPartners_Lifetime == "5"
+                                  | SexPartners_Lifetime == "6"
+                                  | SexPartners_Lifetime == "7" 
+                                  | SexPartners_Lifetime == "8"
+                                  | SexPartners_Lifetime == "9"
+                                  | SexPartners_Lifetime == "10"
+                                  | SexPartners_Lifetime == "11"
+                                  | SexPartners_Lifetime == "12"
+                                  | SexPartners_Lifetime == "13"
+                                  | SexPartners_Lifetime == "15"
+                                  | SexPartners_Lifetime == "16"
+                                  | SexPartners_Lifetime == "17"
+                                  | SexPartners_Lifetime == "18"
+                                  | SexPartners_Lifetime == "20"
+                                  | SexPartners_Lifetime == "25"
+                                  | SexPartners_Lifetime == "30"
+                                  | SexPartners_Lifetime == "38"
+                                  | SexPartners_Lifetime == "45"
+                                  | SexPartners_Lifetime == "59"
+                                  | SexPartners_Lifetime == "95+" ~ "3+", 
+                                 SexPartners_Lifetime == "Don't know" ~ "Don't Know"))
+
+class(DHS$SexPartnersLifetime_Cat)
+
+DHS$SexPartnersLifetime_Cat<-as.factor(DHS$SexPartnersLifetime_Cat)
+# Check it:
+table(DHS$SexPartners_Lifetime, DHS$SexPartnersLifetime_Cat)
+
+#Remove the 28 "don't know"
+DHS<-DHS %>% 
+  filter(SexPartnersLifetime_Cat != "Don't Know")
+
+DHS$SexPartnersLifetime_Cat<- factor(DHS$SexPartnersLifetime_Cat, levels = c("0", "1-2", "3+"))
+levels(DHS$SexPartnersLifetime_Cat)
+```
+## STI in the last 12 months
+```{r}
+#Check missing values for STI in the last 12 months variable
+sum(is.na(DHS$STI_12Months))
+#no missing values
+
+#Check class and levels for STI in the last 12 months variable
+class(DHS$STI_12Months)
+levels(DHS$STI_12Months)
+summary(DHS$STI_12Months)
+
+#drop the one "don't know" case
+DHS<-DHS %>%
+  filter(STI_12Months!= "Don't know")
+
+# get rid of empty "don't know category
+DHS$STI_12Months<-factor(DHS$STI_12Months)
+
+levels(DHS$STI_12Months)
+```
+## Current Contraceptive Method
+```{r}
+#Check missing values 
+sum(is.na(DHS$ContraceptiveMethod_Current))
+#no missing values
+
+#Check class and levels for contraceptive method
+class(DHS$ContraceptiveMethod_Current)
+
+summary(DHS$ContraceptiveMethod_Current)
+
+#Make contraceptive method categorical and check it
+DHS <- DHS %>% 
+   mutate(ContraceptiveMethod_Cat = case_when
+                               (ContraceptiveMethod_Current == "Male condom"
+                                 |ContraceptiveMethod_Current == "Female condom" ~ "Condoms",
+                                ContraceptiveMethod_Current == "Not using" ~ "Not Using",
+                                ContraceptiveMethod_Current == "Pill" 
+                                  | ContraceptiveMethod_Current == "IUD"
+                                  | ContraceptiveMethod_Current == "Injections"
+                                  | ContraceptiveMethod_Current == "Female sterilization" 
+                                  | ContraceptiveMethod_Current == "Male sterilization"
+                                  | ContraceptiveMethod_Current == "Periodic abstinence"
+                                  | ContraceptiveMethod_Current == "Withdrawal"
+                                  | ContraceptiveMethod_Current == "Implants/Norplant"
+                                  | ContraceptiveMethod_Current == "Emergency contraception"
+                                  | ContraceptiveMethod_Current == "Injections 2 month" ~ "Other Contraceptive"))
+DHS$ContraceptiveMethod_Cat<-as.factor(DHS$ContraceptiveMethod_Cat)
+table(DHS$ContraceptiveMethod_Cat, DHS$ContraceptiveMethod_Current)
+summary(DHS$ContraceptiveMethod_Cat)
+```
+## Visited a health facility in the last 12 months
+```{r}
+#Check missing values 
+sum(is.na(DHS$HealthFacility_12Months))
+#no missing values
+
+#Check class and levels for visit to health facility
+class(DHS$HealthFacility_12Months)
+
+summary(DHS$HealthFacility_12Months)
+```
+## Radio
+```{r}
+#Check missing values 
+sum(is.na(DHS$Radio))
+#no missing values
+
+#Check class and levels for radio
+class(DHS$Radio)
+
+summary(DHS$Radio)
+
+#Remove cases that are not dejure residents (114 cases)
+DHS<-DHS %>% 
+  filter(Radio != "Not a dejure resident")
+#Remove empty "not a dejure resident" category
+DHS$Radio<-factor(DHS$Radio)
+
+levels(DHS$Radio)
+summary(DHS$Radio)
+```
+## TV
+```{r}
+#Check missing values 
+sum(is.na(DHS$TV))
+#no missing values (probably because dropped the "not a dejure resident" cases for the Radio variable)
+
+#Check class and levels for TV
+class(DHS$TV)
+
+summary(DHS$TV)
+
+DHS$TV<-factor(DHS$TV)
+levels(DHS$TV)
+```
+## Mobile Phone
+```{r}
+#Check missing values 
+sum(is.na(DHS$MobilePhone))
+#no missing values
+
+#Check class and levels for Mobile Phone
+class(DHS$MobilePhone)
+
+summary(DHS$MobilePhone)
+```
+## Internet Use
+```{r}
+#Check missing values 
+sum(is.na(DHS$InternetUse))
+#no missing values
+
+#Check class and levels for InternetUse
+class(DHS$InternetUse)
+
+summary(DHS$InternetUse)
+
+## Make binary
+#Make contraceptive method categorical and check it
+DHS <- DHS %>% 
+   mutate(InternetUse_Cat = case_when
+                               (InternetUse == "Never" ~ "Never",
+                                 InternetUse == "Yes, last 12 months"
+                                 |InternetUse == "Yes, before last 12 months" ~ "Yes"))
+DHS$InternetUse_Cat<-as.factor(DHS$InternetUse_Cat)
+ #check if it categorized right
+table(DHS$InternetUse_Cat,DHS$InternetUse)
+```
+
+#Prepare variable set for regression modeling
+```{r}
+# Check for missing data
+
+#Choose only necessary vars and remove rows with missing data
+CompleteDHS <- DHS %>%
+  dplyr::select(HIVTest_LastYear, ResidenceType, Age, Age_Cat, Education_Cat, WealthIndex_Cat, MaritalStatus_Cat, Births_Last5Years_Cat, SexPartnersLifetime_Cat, STI_12Months, ContraceptiveMethod_Cat, HealthFacility_12Months, InternetUse_Cat, Radio, TV, MobilePhone, Individual_Weight, Cluster, Stratum) %>%
+  drop_na()
+
+
+MissingRate <-  1- nrow(CompleteDHS)/nrow(DHS)
+#Look at missing rate
+MissingRate
+# Not missing any data
+```
+#Create Interaction Term
+```{r}
+#create interaction term to test linearity
+CompleteDHS <- CompleteDHS %>%
+  mutate(Age_times_logAge = Age * log(Age)) 
+```
+
+#Weight variable calculated 
+```{r}
+#Create weighted variable
+
+CompleteDHS$Weight <- CompleteDHS$Individual_Weight/1000000
+
+# Verify 
+names(CompleteDHS)
+
+#Create new var "svydesign" to assign weights for analysis
+DHSdesign <- svydesign(id = ~Cluster, strata=~Stratum, weights = ~Weight, data=CompleteDHS)
+
+#Check unweighted contninuous age variable
+table(CompleteDHS$Age)
+
+#Check continuous age weighted Frequencies
+svytable(~Age, design=DHSdesign)
+```
+## Boxplots 
+```{r}
+#Boxplot to assess differences in HIV test by Age (weighted)
+
+svyboxplot(Age~HIVTest_LastYear,design=DHSdesign,col =
+             c("mistyrose","powderblue"), xlab="HIV Test", 
+                ylab= "Age (years)")
+
+#The median age of participants who never got a HIV test is lower compared to those who got a HIV test. 
+
+#Compare with unweighted boxplots
+DHS %>% 
+  ggplot(aes(x= HIVTest_LastYear, y = Age)) +
+  geom_boxplot(aes(fill =HIVTest_LastYear)) + 
+  labs(x = "HIV Test Uptake", y = "Age (years)") + 
+  theme_bw()
+```
+# Univariate Analysis
+```{r}
+#Run univariate anaysis (binomial logistic regression) using dependent variable (HIVTest) with each independent variable - Variables with statistical signficance satisfy the inclusion criteria for the multivariate logistic regression
+
+lapply(c("ResidenceType", "Age_Cat","Education_Cat", 
+         "WealthIndex_Cat", "MaritalStatus_Cat", 
+         "Births_Last5Years_Cat", "SexPartnersLifetime_Cat", 
+        "STI_12Months",
+         "ContraceptiveMethod_Cat","HealthFacility_12Months", 
+         "Radio", "TV","MobilePhone","InternetUse_Cat"),
+       function(var) {
+           formula    <- as.formula(paste("HIVTest_LastYear ~", var))
+           univariateCheck <- svyglm(formula, data = DHS, family = binomial, 
+                                design=DHSdesign )
+           summary(univariateCheck)
+       })
+#Statistically Significant Variables (P>.05):
+#Age_Cat
+#MaritalStatus_Cat -"Partnered"
+#Birth_Last5Years_Cat -"2+"
+#SexPartnersLifetime_Cat
+#ContraceptiveMethod_Cat
+#HealthFacility_12Months
+#MobilePhone
+
+#Non-statistically significant Variables (P<.05)
+#Residence_Type, Education, WealthIndex_Cat, STI_Months12, ContraceptiveMethod_Cat, Radio, TV, InternetUse_Cat
+
+#Decision - Include all statistically significant variables (except "FirstSexAge_Cat) in the multivariate analysis. 
+
+#Include the main exposure (ResidenceType), and the following covariates: contraceptive method, mobile phone ownership
+
+#Even though we have non-statistically significant findings at the univariate level, the literature emphasizes the importance to include these variables for  predictive modeling
+
+#Variables will be excluded from the final model if they do not improve model fit
+```
+# Test linearity assumption
+```{r}
+#Linearity - assess whether age as a continuous variable is appropriate for the regression models
+
+boxTidwellAGE <- survey::svyglm(HIVTest_LastYear ~ Age + Age_times_logAge, data = CompleteDHS, family = "binomial", design = DHSdesign)
+
+summary(boxTidwellAGE) #interaction term has a p value <0.05 - linearity assumption is violated. Use age categorical variable
+```
+# Binomial regression
+```{r}
+#Run logistic regression model
+HIVLogitWGHT1<-svyglm(HIVTest_LastYear ~ ResidenceType + Age_Cat+ MaritalStatus_Cat + Births_Last5Years_Cat+ SexPartnersLifetime_Cat + HealthFacility_12Months, data =CompleteDHS, family = "binomial", design=DHSdesign)
+
+ORHIVWGHT1<-exp(cbind(OR = coef(HIVLogitWGHT1), confint(HIVLogitWGHT1))) 
+ORHIVWGHT1
+```
+# Test Assumptions
+```{r}
+#Assess multicollinearity
+vif(HIVLogitWGHT1)
+#All variables have a VIF values less than 5 - Assumption is met (no collinearity)
+
+#Cook's D cutoff = 4/2798 
+cutoff <- 0.00143
+
+#Influential cases- Cook's D plot [Note: need to run both lines in one setting]
+plot(HIVLogitWGHT1, which=4, id.n=5, col= "red")
+abline(h=cutoff, lty=2, col="darkred")
+
+#There are 98 influential cases
+
+#identify obs with a Cook's distance greater than the cutoff
+obs_no <- as.data.frame(cooks.distance(HIVLogitWGHT1)) %>%
+  mutate(obs_no=row_number()) %>%
+  filter(`cooks.distance(HIVLogitWGHT1)` > cutoff)
+
+#Exlcude values in the Cook's D plot and compare models
+Data_caseremov<-CompleteDHS %>% 
+  mutate(CooksD = cooks.distance(HIVLogitWGHT1)) %>% 
+  filter(CooksD < cutoff)
+
+#Binomial logistic Regression with influential cases removed
+HIVLogitWGHT2<-svyglm(HIVTest_LastYear ~ ResidenceType + Age_Cat+ MaritalStatus_Cat + Births_Last5Years_Cat+ SexPartnersLifetime_Cat + HealthFacility_12Months, data =Data_caseremov, family = "binomial", design=DHSdesign)
+
+ORHIVWGHT2<-exp(cbind(OR = coef(HIVLogitWGHT2), confint(HIVLogitWGHT2))) 
+ORHIVWGHT2
+
+#Compare coefficients between models with and without influential observations 
+compareCoefs(HIVLogitWGHT1, HIVLogitWGHT2)
+#No changes detected, so we can leave all of the cases. 
+```
+# Run final parsimonious model
+```{r}
+#Run two logistic regression models 
+#Model 1
+HIVLogitWGHTPars1<-svyglm(HIVTest_LastYear ~  ResidenceType + Age_Cat + MaritalStatus_Cat + Births_Last5Years_Cat+ SexPartnersLifetime_Cat + HealthFacility_12Months, data =CompleteDHS, family = "binomial", design=DHSdesign)
+
+summary(HIVLogitWGHTPars1)
+
+ORHIVWGHTPars1<-exp(cbind(OR = coef(HIVLogitWGHTPars1), confint(HIVLogitWGHTPars1))) 
+ORHIVWGHTPars1
+
+#Model 2 - include contraceptive method and mobilephone ownership
+HIVLogitWGHTPars2<-svyglm(HIVTest_LastYear ~ ResidenceType + Age_Cat + MaritalStatus_Cat + Births_Last5Years_Cat+ SexPartnersLifetime_Cat  + ContraceptiveMethod_Cat+ HealthFacility_12Months + MobilePhone,data =CompleteDHS, family = "binomial", design=DHSdesign)
+
+summary(HIVLogitWGHTPars2)
+
+ORHIVWGHTPars2<-exp(cbind(OR = coef(HIVLogitWGHTPars2), confint(HIVLogitWGHTPars2))) 
+ORHIVWGHTPars2
+
+#Pseudo R Squares/Adjusted R Squares
+fit.svyglm(HIVLogitWGHTPars1)
+fit.svyglm(HIVLogitWGHTPars2)
+
+anova(HIVLogitWGHTPars1, HIVLogitWGHTPars2)
+
+anova(HIVLogitWGHTPars1, HIVLogitWGHTPars2, method="Wald")
+
+AIC(HIVLogitWGHTPars1, HIVLogitWGHTPars2)
+BIC (HIVLogitWGHTPars1, HIVLogitWGHTPars2, maximal = HIVLogitWGHTPars2)
+
+#AIC and BIC values for model 1 is lower. This suggests that model 1 is a better fit. 
+```
+# Odds Ratios Graphic
+```{r}
+#Extract ORs 
+boxLabels = c ("Residence (Urban)", "Age (18-20)", "Age (21-24)", "Marital Status (Not Partnered)", "Marital Status (Partnered)", "Births Last 5 Years (1)", "Births Last 5 Years (2+)", "Sex Partners (1-2)", "Sex Partners (3+)", "Healthcare Visits")
+df <- data.frame(yAxis = length(boxLabels):1,
+  boxOdds = 
+   c(0.9288436, 1.6144059, 2.3996796, 1.1598624, 1.0144343, 
+     1.0398193, 0.6681540, 1.9157983, 1.5951423, 1.1073606), 
+  boxCILow = 
+   c(0.7690751, 1.1783163, 1.7264368, 0.3789230, 0.728314, 
+     0.8000482, 0.3920753, 1.4012436, 1.1160488, 0.8622075),
+  boxCIHigh = 
+  c(1.1218026, 2.2118902, 3.3354605, 3.5502749, 1.4129566, 
+    1.3514487, 1.1386328, 2.6193042, 2.2798996, 1.4222185))
+
+
+#create plot 
+(p <- ggplot(df, aes(x = boxOdds, y = boxLabels)) +
+  geom_vline(aes(xintercept = 1), size = .25, linetype = 'dashed') +
+  geom_errorbarh(aes(xmax = boxCIHigh, xmin = boxCILow), size = .5, height = 
+      .2, color = 'gray50') +
+  geom_point(size = 3.5, color = 'orange') +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor =    
+  element_blank ()) +
+  scale_x_continuous(breaks = seq(0,7,1) ) +
+  coord_trans(x = 'log10') +
+  ylab('') +
+  xlab('Odds ratio (log scale)') +
+  ggtitle('ODDS RATIOS - Binomial Regression Model')
+)
+```
+# Table 1
+```{r}
+#Label variables
+label(CompleteDHS$HIVTest_LastYear)<-"HIV Test Within Last Year"
+label(CompleteDHS$Age_Cat)<-"Age (Years)"
+label(CompleteDHS$Education_Cat)<-"Education Level"
+label(CompleteDHS$WealthIndex)<-"Wealth Index"
+label(CompleteDHS$MaritalStatus_Cat)<-"Marital Status"
+label(CompleteDHS$Births_Last5Years_Cat)<-"Births in Last 5 Years"
+label(CompleteDHS$SexPartnersLifetime_Cat)<-"Lifetime Sex Partners"
+label(CompleteDHS$STI_12Months)<-"STI in Last 12 Months"
+label(CompleteDHS$ContraceptiveMethod_Cat)<-"Contraceptive Method"
+label(CompleteDHS$HealthFacility_12Months)<-"Visited Healthcare Facility in Last 12 Months"
+label(CompleteDHS$InternetUse_Cat)<-"Internet Access"
+label(CompleteDHS$Radio)<-"Radio Access"
+label(CompleteDHS$TV)<-"Television Access"
+label(CompleteDHS$ResidenceType)<-"Residence Type"
+
+#Make table
+table1(~HIVTest_LastYear + Age_Cat + MaritalStatus_Cat + Births_Last5Years_Cat + SexPartnersLifetime_Cat + HealthFacility_12Months|ResidenceType, overall = "Total", rowlabelhead="Variable", CompleteDHS)
+```
+# Figure 1
+```{r}
+#The DHS dataset is 8514 observations when it is read in. After we select only women ages 15-24, the dataset is 2913 observations. If we exclude those who answered "don't know" to the number of lifetime sex partners (28), then the dataset is 2885. Drop 1 more who answered "don't know" to STI question, leaving 2884. Remove 113 who are not dejure residents, leaving 2771. Did not exclude 98 influential cases because it did not matter to the model.
+
+grViz("digraph flowchart {
+      node [fontname = Helvetica, shape = rectangle, fontsize=10] 
+      tab1 [label = '@@1']
+      tab2 [label = '@@2']
+      tab3 [label = '@@3']
+      tab4 [label = '@@4']
+      tab5 [label = '@@5']
+    
+      
+      tab1 -> tab2 -> tab3 -> tab4 -> tab5}
+      [1]: 'DHS dataset including all women n=8,514'
+      [2]: 'Excluding 5,601 participants not ages 15-24 n=2,913'
+      [3]: 'Excluding 28 individuals who did not know number of lifetime sex partners n = 2,885'
+      [4]: 'Excluding 1 individual who did not know about STI in the last 12 months n = 2,884'
+      [5]: 'Excluding 113 individuals who were not dejure residents n = 2,771'
+      ")
+```
+# Test whether wealth index is an effect modifier
+```{r}
+#Model 1 (with wealth index added)
+HIVLogitWGHTWealth<-svyglm(formula =HIVTest_LastYear ~  ResidenceType + WealthIndex_Cat + Age_Cat + MaritalStatus_Cat + Births_Last5Years_Cat+ SexPartnersLifetime_Cat + HealthFacility_12Months, data =CompleteDHS, family = "binomial", design=DHSdesign)
+
+summary(HIVLogitWGHTWealth)
+
+ORHIVWGHTWealth<-exp(cbind(OR = coef(HIVLogitWGHTWealth), confint(HIVLogitWGHTWealth))) 
+ORHIVWGHTWealth
+
+# model with wealth index * residence type interaction term
+HIVLogitWGHTinteraction <- svyglm(HIVTest_LastYear ~  ResidenceType + WealthIndex_Cat + Age_Cat + MaritalStatus_Cat + Births_Last5Years_Cat+ SexPartnersLifetime_Cat + HealthFacility_12Months + ResidenceType*WealthIndex_Cat, data =CompleteDHS, family = "binomial", design=DHSdesign)
+
+summary(HIVLogitWGHTinteraction)
+
+ORHIVLogitWGHTinteraction<-exp(cbind(OR = coef(HIVLogitWGHTinteraction), confint(HIVLogitWGHTinteraction))) 
+ORHIVLogitWGHTinteraction
+
+#Interaction Test
+anova(HIVLogitWGHTWealth,HIVLogitWGHTinteraction, test = "F", method = "LRT")
+#p>0.05,Interaction term is not significant
+
+#Plot interactions
+#install.packages("interactions")
+library(interactions)
+
+#use cat_plot to plot the interactions
+
+#Visualization 1
+cat_plot(HIVLogitWGHTinteraction, pred = ResidenceType, modx = WealthIndex_Cat, 
+         geom = "point",
+         x.label = "Area of Residence", y.label = "HIV Test in Last Year", legend.main = "Wealth Index")
+#No interaction 
+```
